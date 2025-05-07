@@ -100,7 +100,7 @@ def run_all_sports():
 
         if grouped:
             for location, dates in grouped.items():
-                msg += f"\n📍 *{location}*\n"
+                msg += f"\n📍 *{location}*"
                 for date, timeslots in dates.items():
                     msg += f"\n\n📅 {date}"
                     for (start, end), courts in timeslots.items():
@@ -110,11 +110,11 @@ def run_all_sports():
                         courts_str = ", ".join(sorted({re.sub(r'.*?(Court\s*|Gelanggang\s*Badminton\s*)', '', c, flags=re.IGNORECASE) for c in courts}))
                         msg += f"\n• {time_range} → {courts_str}"
                  
-                msg += "\n--------------------"
+                msg += "\n--------------------\n\n"
         else:
             msg += "No session found."
 
-        msg += "\n\nCheck now: https://mypjtempahan.mbpj.gov.my/"
+        msg += "Check now: https://mypjtempahan.mbpj.gov.my/"
         msg += "\n\nNext check running in next hour..."
         send_telegram_message(msg, thread_id)
 
