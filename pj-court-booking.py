@@ -122,7 +122,10 @@ def run_all_sports():
 run_all_sports()
 
 # Schedule hourly
-schedule.every(4).hour.at(":00").do(run_all_sports)
+schedule.every().day.at("00:00").do(run_all_sports)
+schedule.every().day.at("06:00").do(run_all_sports)
+schedule.every().day.at("12:00").do(run_all_sports)
+schedule.every().day.at("18:00").do(run_all_sports)
 
 print("🔁 Bot running. Press Ctrl+C to stop.")
 while True:
