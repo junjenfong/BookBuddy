@@ -226,40 +226,42 @@ def process_and_notify(all_location_slots):
             short_date = date_obj.strftime("%d/%m")
             day_name = date_obj.strftime("%a")
             
-            # Group slots by court number
-            court_groups = {}
+            # Group slots by time slot (not by court)
+            time_groups = {}
             for slot in slots:
                 flat_key = f"{location_name} - {display_date} - {slot}"
                 court_num = extract_court_number(slot)
                 
                 # Extract time only (remove court prefix)
                 time_only = re.sub(r'(?:Court|Gelanggang)\s+\d+\s*', '', slot, flags=re.IGNORECASE).strip()
-                # Compact time format: "7:00 PM to 9:00 PM" -> "7-9PM"
-                time_compact = time_only.replace(":00", "").replace(" ", "").replace("to", "-")
-                # Further simplify: "7PM-9PM" -> "7-9"
-                time_compact = re.sub(r'(\d+)PM-(\d+)PM', r'\1-\2', time_compact)
                 
                 is_new = flat_key in new_slots
                 
-                if court_num not in court_groups:
-                    court_groups[court_num] = []
-                court_groups[court_num].append((time_compact, is_new))
+                if time_only not in time_groups:
+                    time_groups[time_only] = []
+                time_groups[time_only].append((court_num, is_new))
             
             # Format date line
-            message_lines.append(f"`{short_date} {day_name}`")
+            message_lines.append(f"\n`{short_date} {day_name}`")
             
-            # Format each court group
-            for court_num in sorted(court_groups.keys()):
-                times = court_groups[court_num]
-                time_strings = []
-                for time_str, is_new in times:
-                    if is_new:
-                        time_strings.append(f"{escape_md_v2(time_str)}🆕")
-                    else:
-                        time_strings.append(escape_md_v2(time_str))
+            # Format each time slot group
+            for time_slot in sorted(time_groups.keys(), key=lambda x: datetime.strptime(x.split(" to ")[0], "%I:%M %p")):
+                courts = time_groups[time_slot]
+                court_strings = []
+                for court_num, is_new in sorted(courts, key=lambda x: x[0] if x[0] is not None else 999):
+                    if court_num is not None:
+                        if is_new:
+                            court_strings.append(f"{court_num}🆕")
+                        else:
+                            court_strings.append(str(court_num))
                 
-                times_text = ", ".join(time_strings)
-                message_lines.append(f"  c{court_num}: {times_text}")
+                courts_text = ", ".join(court_strings)
+                # Format time nicely
+                time_parts = time_slot.split(" to ")
+                if len(time_parts) == 2:
+                    start_fmt = datetime.strptime(time_parts[0], "%I:%M %p").strftime("%I:%M %p").lstrip("0")
+                    end_fmt = datetime.strptime(time_parts[1], "%I:%M %p").strftime("%I:%M %p").lstrip("0")
+                    message_lines.append(f"• {escape_md_v2(start_fmt)} \\- {escape_md_v2(end_fmt)} → {escape_md_v2(courts_text)}")
         
         message_lines.append("")  # Space between locations
     
@@ -393,3 +395,9 @@ def run():
 
 if __name__ == "__main__":
     run()
+    # Your scheduling logic remains the same
+    schedule.every().hour.at(":00").do(run)
+    print("⏱️ DBKL bot running hourly. Press Ctrl+C to stop.")
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
