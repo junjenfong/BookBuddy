@@ -9,6 +9,7 @@ import time
 import re
 from dateutil import parser
 
+
 # Load .env variables
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -20,14 +21,15 @@ HASH_FILE = "dbkl_last_sent_hash.json"
 SLOT_FILE = "dbkl_last_slots.json"
 TARGET_URL_TEMPLATE = "https://tempahkl.dbkl.gov.my/facility/detail/book?location_id={}&start_date={}&sub_category=TENIS&toggle_step=1"
 MAX_BOOKING_DAYS = 22
+TIME_RE = re.compile(r"\d{1,2}:\d{2}\s[AP]M", re.IGNORECASE)
 
 # Location configuration
 LOCATIONS = {
-    15: "Bukit Bandaraya",
-    9: "Bangsar",
-    7: "TTDI",
+    # 15: "Bukit Bandaraya",
+    # 9: "Bangsar",
+    # 7: "TTDI",
     10: "TITIWANGSA",
-    11: "Bandar Tun Razak"
+    # 11: "Bandar Tun Razak"
 }
 
 # Courts to ignore per location (court numbers to exclude)
@@ -38,6 +40,13 @@ IGNORED_COURTS = {
     # Add court numbers you want to ignore for each location
 }
 
+
+
+def parse_start_time(slot: str) -> datetime:
+    match = TIME_RE.search(slot)
+    if not match:
+        raise ValueError(f"Invalid time slot format: {slot}")
+    return datetime.strptime(match.group(), "%I:%M %p")
 
 def escape_md_v2(text):
     return re.sub(r'([_*!\[\]()~`>#+=|{}\\\-.])', r'\\\1', text)
@@ -112,13 +121,32 @@ def extract_court_number(label: str) -> int:
         return None
 
 
-def is_slot_after_4pm(label: str) -> bool:
-    """Check if slot is 7PM or later"""
+def extract_time_range(label: str):
+    """Extract start and end time strings from label
+    Returns: (start_time_str, end_time_str) or (None, None)
+    Handles: "07:00 PM - 09:00 PM" or "07:00 PM to 09:00 PM"
+    """
     try:
-        time_part = label.split("to")[0].split()[-2:]  # e.g. ['04:00', 'PM']
-        time_str = " ".join(time_part)
-        dt = parser.parse(time_str)
-        return dt.hour >= 20  # 7PM onwards
+        # Normalize spaces and separators
+        clean_label = label.replace(" to ", "-").replace(" - ", "-")
+        # Regex to find time range pattern: HH:MM AM/PM - HH:MM AM/PM
+        match = re.search(r'(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)', clean_label, re.IGNORECASE)
+        if match:
+            return match.group(1), match.group(2)
+        return None, None
+    except Exception:
+        return None, None
+
+
+def is_slot_after_4pm(label: str) -> bool:
+    """Check if slot starts at 7PM (19:00) or later"""
+    try:
+        start_time, _ = extract_time_range(label)
+        if not start_time:
+            return False
+            
+        dt = parser.parse(start_time)
+        return dt.hour >= 19  # 7PM onwards (19:00)
     except Exception:
         return False
 
@@ -245,7 +273,21 @@ def process_and_notify(all_location_slots):
             message_lines.append(f"\n`{short_date} {day_name}`")
             
             # Format each time slot group
-            for time_slot in sorted(time_groups.keys(), key=lambda x: datetime.strptime(x.split(" to ")[0], "%I:%M %p")):
+            # Sort by start time
+            sorted_slots = []
+            for time_slot in time_groups.keys():
+                # Extract clean time for sorting
+                # time_slot format is likely "7:00 PM - 9:00 PM" (from regex extraction) or original slot
+                # But time_groups keys came from "time_only" extraction which preserves original separators? 
+                # Actually earlier: time_only = re.sub(..., '', slot).strip() -> "7:00 PM - 9:00 PM"
+                start, _ = extract_time_range(time_slot)
+                if start:
+                    dt = parser.parse(start)
+                    sorted_slots.append((dt, time_slot))
+            
+            sorted_slots.sort(key=lambda x: x[0])
+            
+            for _, time_slot in sorted_slots:
                 courts = time_groups[time_slot]
                 court_strings = []
                 for court_num, is_new in sorted(courts, key=lambda x: x[0] if x[0] is not None else 999):
@@ -256,12 +298,19 @@ def process_and_notify(all_location_slots):
                             court_strings.append(str(court_num))
                 
                 courts_text = ", ".join(court_strings)
+                
                 # Format time nicely
-                time_parts = time_slot.split(" to ")
-                if len(time_parts) == 2:
-                    start_fmt = datetime.strptime(time_parts[0], "%I:%M %p").strftime("%I:%M %p").lstrip("0")
-                    end_fmt = datetime.strptime(time_parts[1], "%I:%M %p").strftime("%I:%M %p").lstrip("0")
-                    message_lines.append(f"• {escape_md_v2(start_fmt)} \\- {escape_md_v2(end_fmt)} → {escape_md_v2(courts_text)}")
+                start_str, end_str = extract_time_range(time_slot)
+                if start_str and end_str:
+                    try:
+                        start_fmt = parser.parse(start_str).strftime("%I:%M %p").lstrip("0")
+                        end_fmt = parser.parse(end_str).strftime("%I:%M %p").lstrip("0")
+                        message_lines.append(f"• {escape_md_v2(start_fmt)} \\- {escape_md_v2(end_fmt)} → {escape_md_v2(courts_text)}")
+                    except:
+                        # Fallback if parsing fails
+                        message_lines.append(f"• {escape_md_v2(time_slot)} → {escape_md_v2(courts_text)}")
+                else:
+                    message_lines.append(f"• {escape_md_v2(time_slot)} → {escape_md_v2(courts_text)}")
         
         message_lines.append("")  # Space between locations
     
@@ -393,11 +442,6 @@ def run():
     process_and_notify(all_location_slots)
 
 
+
 if __name__ == "__main__":
     run()
-    # Your scheduling logic remains the same
-    schedule.every().hour.at(":00").do(run)
-    print("⏱️ DBKL bot running hourly. Press Ctrl+C to stop.")
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
