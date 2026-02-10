@@ -25,11 +25,11 @@ TIME_RE = re.compile(r"\d{1,2}:\d{2}\s[AP]M", re.IGNORECASE)
 
 # Location configuration
 LOCATIONS = {
-    # 15: "Bukit Bandaraya",
-    # 9: "Bangsar",
-    # 7: "TTDI",
+    15: "Bukit Bandaraya",
+    9: "Bangsar",
+    7: "TTDI",
     10: "TITIWANGSA",
-    # 11: "Bandar Tun Razak"
+    11: "Bandar Tun Razak"
 }
 
 # Courts to ignore per location (court numbers to exclude)
