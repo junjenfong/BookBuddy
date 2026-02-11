@@ -139,14 +139,15 @@ def extract_time_range(label: str):
 
 
 def is_slot_after_4pm(label: str) -> bool:
-    """Check if slot starts at 7PM (19:00) or later"""
+    """Check if slot starts between 7PM and 10PM (inclusive)"""
     try:
         start_time, _ = extract_time_range(label)
         if not start_time:
             return False
             
         dt = parser.parse(start_time)
-        return dt.hour >= 19  # 7PM onwards (19:00)
+        # 7PM onwards (19:00) but before 11PM (23:00)
+        return 19 <= dt.hour < 23
     except Exception:
         return False
 
